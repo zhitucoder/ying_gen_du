@@ -29,6 +29,50 @@
 
 核心页面：**首页**（粘贴链接 / 上传视频）、**句子列表 / 全文**（整篇文案、整篇播放、任选一句下钻）、**跟读页**（原句视频/音频 + 录音 + A/B 对比）。
 
+## 登录与历史
+
+- 支持：**用户名/密码登录**、**手机号/密码登录**、**手机号验证码登录**。
+- 支持：**手机号注册**、**短信验证码找回/重置密码**。
+- 默认昵称自动生成：`学神01`、`学神02`…，注册时可选 `学霸` 前缀；昵称全局唯一，首页可修改。
+- 登录后数据按账号隔离；历史记录持久化在 MySQL，换设备登录同一账号即可找回。
+- 首页右上角可退出登录；密码重置后旧 JWT 会失效（token_version）。
+- 认证方式：PBKDF2 密码哈希 + JWT。生产环境请修改 `.env` 中的 `JWT_SECRET` 与 `SMS_CODE_SECRET`。
+- 说明：旧的设备匿名账号（`dev-xxx`）没有密码，需重新注册；旧数据仍在库里。
+
+短信默认用 Mock，便于本地开发：
+
+```ini
+SMS_PROVIDER=mock       # 验证码固定为 SMS_MOCK_CODE（默认 123456），仅开发用
+```
+
+上线切腾讯云短信：
+
+```ini
+SMS_PROVIDER=tencent
+SMS_TENCENT_SECRET_ID=
+SMS_TENCENT_SECRET_KEY=
+SMS_TENCENT_SDK_APP_ID=
+SMS_TENCENT_SIGN_NAME=
+SMS_TENCENT_TEMPLATE_ID=
+SMS_TENCENT_REGION=ap-guangzhou
+```
+
+> 腾讯云验证码模板参数顺序为 `{1}=验证码`、`{2}=有效分钟数`。
+
+## 视频去重
+
+- 相同视频按 **SHA-256** 去重，原视频 / 代理 / 整段音频在对象存储只存一份。
+- 多个项目共享 `media_assets` 资产，通过 `projects.media_asset_id` 关联。
+- `ref_count` 引用计数：删除项目只减引用；归零后由 GC 清理。
+- 对象布局：`media/{sha[:2]}/{sha}/original.* | proxy.mp4 | audio.mp3`。
+- 手动运行 GC（默认 24h 宽限期）：
+
+```bash
+.venv/bin/python -m src.worker.gc
+```
+
+- 存量项目未迁移，仍使用 `projects/{id}/source.mp4`；新项目使用资产共享。
+
 ## 目录结构
 
 ```
@@ -150,6 +194,8 @@ curl -s http://127.0.0.1:8000/health
 - 数据库表在 API 启动时由 `create_all` 自动创建，暂无 Alembic；改表需手动迁移或重建。
 - DB 中 `audio_url` / `video_url` 存的是对象 key，接口返回的是 MinIO 签名 URL。
 - 抖音链接由 Playwright 无头浏览器解析（`src/worker/resolvers/douyin.js`），无需登录；B站/YouTube 等走 `yt-dlp`。可通过 `DOUYIN_RESOLVER_ENABLED=false` 关闭。
+- 短信防刷：单号 60 秒冷却、每小时 3 条、每天 5 条，并叠加 IP/设备限制；验证码只存哈希、5 分钟有效、最多试错 5 次。
+- 生产环境只信任来自 Nginx 的 `X-Forwarded-For`，避免客户端伪造 IP 绕过限流。
 - `.env` 已被 `.gitignore` 排除，请勿提交密钥。
 
 ## 相关文档

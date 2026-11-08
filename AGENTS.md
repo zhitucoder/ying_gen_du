@@ -37,6 +37,9 @@ docker compose -f infra/docker-compose.yml up -d
 # no test/lint config exists; use these as the verification gate
 .venv/bin/python -m compileall -q src
 curl -s http://127.0.0.1:8000/health
+
+# media GC (manual)
+.venv/bin/python -m src.worker.gc
 ```
 
 - No pytest / ruff / mypy configured. Verify changes with `compileall`, `/health`, and an upload → poll → `/segments` smoke test.
@@ -60,6 +63,9 @@ curl -s http://127.0.0.1:8000/health
 ## Architecture invariants
 
 - DB columns `audio_url` / `video_url` / `source_video_url` store **object keys, never URLs**. The API converts them to presigned URLs in `src/api/storage.py`; keep this invariant.
+- Media is content-addressed: `media_assets.sha256` is unique; `media_asset_files` holds `original/proxy/audio`; `media_sources` maps URL/upload fingerprints to assets. `projects.media_asset_id` links projects, and `ref_count` tracks references.
+- Original/proxy/audio are stored once per asset; per-sentence mp3s stay per project. Deleting a project decrements `ref_count`; GC is `src/worker/gc.py` (`python -m src.worker.gc`, 24h grace by default).
+- Legacy projects may have `media_asset_id = NULL` and per-project `projects/{id}/source.mp4`; do not assume every project has an asset.
 - Presigned URLs are signed against `MINIO_ENDPOINT`. For phone clients this endpoint must be reachable (not `127.0.0.1`).
 - Tables are created by `Base.metadata.create_all()` in the FastAPI lifespan. There is **no Alembic**; schema changes need a manual migration (or drop/recreate in dev).
 - `ffmpeg` / `ffprobe` must be on PATH. The pipeline decodes once to `full.wav`, slices segments from it, and transcodes a 720p H.264/AAC proxy.
@@ -83,5 +89,10 @@ curl -s http://127.0.0.1:8000/health
 
 - No pronunciation scoring: `POST /api/segments/{id}/score` returns 501; `recordings.score` is reserved and unused.
 - Recordings are uploaded to MinIO (not local-only).
-- Auth is a stub: `POST /api/auth/login` accepts any `openid` and returns a JWT; there is no WeChat login yet.
+- Auth: username/password + phone/SMS (PBKDF2, JWT with `token_version`). Endpoints: `/api/auth/{register,login,me}`, `/api/auth/sms/{send,register,login,reset-password,bind}`. Password reset bumps `token_version` and revokes old JWTs. WeChat login is **not** implemented yet.
+- SMS: `src/api/sms` (mock default, tencent). Rate limits in Redis via Lua: 60s cooldown, 5/day/phone, 3/hour, plus IP/device caps. Codes are hashed in `sms_codes`; never log or return plaintext. `SMS_PROVIDER=mock` uses `SMS_MOCK_CODE` (default `123456`).
+- `users` has `username/password_hash/phone/phone_verified_at/auth_type/token_version`; startup `ensure_schema()` adds them (no Alembic).
+- Nicknames are globally unique. Defaults are generated per prefix (`学神01`, `学霸01`, ...) via `nickname_counters`; `users.nickname` has a unique index. `PATCH /api/auth/me` changes it. Startup `ensure_nickname_unique()` resolves empty/duplicate nicknames before adding the index.
+- All project/recording queries are scoped by `user_id`; keep the ownership checks.
+- Frontend login page is the first page; JWT lives in `yg_token`, 401 redirects to login.
 - Code comments/docstrings are rejected by a hook unless they explain non-obvious algorithms. Keep code self-documenting.

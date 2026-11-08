@@ -10,10 +10,11 @@ from src.api.models import User
 from src.common.config import settings
 
 
-def create_token(user_id: int) -> str:
+def create_token(user_id: int, token_version: int = 0) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
+        "ver": token_version,
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
     }
@@ -47,4 +48,6 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None:
         raise _unauthorized("User not found")
+    if int(payload.get("ver", 0)) != user.token_version:
+        raise _unauthorized("Token has been revoked")
     return user

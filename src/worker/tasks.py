@@ -10,3 +10,10 @@ logger = logging.getLogger(__name__)
 def process_project(project_id: int) -> dict:
     run_pipeline(project_id)
     return {"project_id": project_id, "status": "done"}
+
+
+@celery_app.task(name="gc_media_assets")
+def gc_media_assets_task() -> dict:
+    from src.worker.gc import gc_media_assets
+
+    return {"deleted": gc_media_assets()}

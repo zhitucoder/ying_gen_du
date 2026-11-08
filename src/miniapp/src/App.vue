@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { onLaunch } from '@dcloudio/uni-app'
 
-import { ensureLogin } from '@/api/auth'
-
-onLaunch(() => {
-  ensureLogin().catch(() => {})
-})
+onLaunch(() => {})
 </script>
 
 <style>

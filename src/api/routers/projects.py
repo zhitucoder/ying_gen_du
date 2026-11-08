@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 from src.api.db import get_db
 from src.api.deps import get_current_user
-from src.api.models import Project, Segment, User
+from src.api.media_assets import decrement_asset
+from src.api.models import Project, Recording, Segment, User
 from src.api.schemas import ProjectOut, ProjectUpdate, SegmentOut, TranscriptOut
-from src.api.storage import presigned_get
+from src.api.storage import delete_object, presigned_get
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -28,8 +29,10 @@ def _project_out(project: Project) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         title=project.title,
+        source_type=project.source_type,
         status=project.status,
         progress=project.progress,
+        error_msg=project.error_msg,
         duration_ms=project.duration_ms,
         cover_url=project.cover_url,
         source_url=project.source_url,
@@ -130,3 +133,41 @@ def get_video(
     if not project.source_video_url:
         raise HTTPException(status_code=404, detail="video not available")
     return {"video_url": presigned_get(project.source_video_url)}
+
+
+@router.delete("/{project_id}")
+def delete_project(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = _get_owned_project(db, project_id, user)
+
+    segment_keys = [
+        key
+        for key in db.scalars(
+            select(Segment.audio_url).where(Segment.project_id == project.id)
+        ).all()
+        if key
+    ]
+    recording_keys = [
+        key
+        for key in db.scalars(
+            select(Recording.audio_url)
+            .join(Segment, Recording.segment_id == Segment.id)
+            .where(Segment.project_id == project.id)
+        ).all()
+        if key
+    ]
+
+    asset_id = project.media_asset_id
+    db.delete(project)
+    db.commit()
+
+    if asset_id:
+        decrement_asset(db, asset_id)
+
+    for key in segment_keys + recording_keys:
+        delete_object(key)
+
+    return {"deleted": True}

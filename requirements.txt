@@ -12,3 +12,4 @@ minio
 yt-dlp
 httpx
 packaging
+tencentcloud-sdk-python-sms

@@ -53,6 +53,35 @@ class Settings(BaseSettings):
     asr_iflytek_api_key: str = ""
     asr_iflytek_api_secret: str = ""
 
+    sms_enabled: bool = True
+    sms_provider: str = "mock"
+    sms_tencent_secret_id: str = ""
+    sms_tencent_secret_key: str = ""
+    sms_tencent_sdk_app_id: str = ""
+    sms_tencent_sign_name: str = ""
+    sms_tencent_template_id: str = ""
+    sms_tencent_region: str = "ap-guangzhou"
+    sms_code_length: int = 6
+    sms_code_ttl_seconds: int = 300
+    sms_code_secret: str = "dev-sms-secret-change-me"
+    sms_mock_code: str = "123456"
+    sms_cooldown_seconds: int = 60
+    sms_hourly_limit: int = 3
+    sms_daily_limit: int = 5
+    sms_ip_hourly_limit: int = 10
+    sms_ip_daily_limit: int = 30
+    sms_device_daily_limit: int = 5
+    sms_max_verify_attempts: int = 5
+
+    nickname_default_prefix: str = "学神"
+    nickname_allowed_prefixes: str = "学神,学霸"
+    nickname_sequence_width: int = 2
+
+    media_dedup_enabled: bool = True
+    media_gc_grace_seconds: int = 86400
+    media_staging_prefix: str = "staging/"
+    media_asset_prefix: str = "media/"
+
     max_video_seconds: int = 1800
     max_upload_mb: int = 300
     transcode_video: bool = True

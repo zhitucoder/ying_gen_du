@@ -4,8 +4,20 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.api.db import SessionLocal
-from src.api.models import Project, Segment
-from src.api.storage import upload_file
+from src.api.media_assets import (
+    add_source,
+    asset_object_key,
+    compute_sha256,
+    find_asset_by_source,
+    get_asset_file,
+    get_or_create_asset,
+    link_project_asset,
+    upsert_asset_file,
+    upload_fingerprint,
+    url_fingerprint,
+)
+from src.api.models import MediaAsset, Project, Segment
+from src.api.storage import download_file, upload_file
 from src.common.config import settings
 from src.worker.asr import get_asr_provider
 from src.worker.media import (
@@ -41,14 +53,24 @@ def _prepare_source(project: Project, work_dir: Path, db) -> Path:
             raise RuntimeError("upload project has no source object")
         ext = Path(key).suffix or ".mp4"
         local = work_dir / f"source{ext}"
-        from src.api.storage import download_file
-
         _update(project, db, status="downloading", progress=10)
         download_file(key, str(local))
         return local
 
     if not project.source_url:
         raise RuntimeError("link project has no source url")
+
+    fingerprint = url_fingerprint(project.source_url)
+    cached = find_asset_by_source(db, fingerprint)
+    if cached is not None:
+        original = get_asset_file(db, cached.id, "original")
+        if original is not None:
+            ext = Path(original.object_key).suffix or ".mp4"
+            local = work_dir / f"source{ext}"
+            _update(project, db, status="downloading", progress=10)
+            download_file(original.object_key, str(local))
+            link_project_asset(db, project, cached)
+            return local
 
     _update(project, db, status="downloading", progress=10)
     if "douyin.com" in project.source_url:
@@ -66,6 +88,33 @@ def _prepare_source(project: Project, work_dir: Path, db) -> Path:
     except Exception:
         logger.exception("yt-dlp failed, falling back to direct download")
         return download_direct(project.source_url, work_dir / "source.mp4")
+
+
+def _asset_for_source(
+    db, project: Project, source: Path, duration_ms: int
+) -> MediaAsset:
+    asset = db.get(MediaAsset, project.media_asset_id) if project.media_asset_id else None
+    if asset is None:
+        sha256 = compute_sha256(source)
+        asset = get_or_create_asset(
+            db,
+            sha256=sha256,
+            size_bytes=source.stat().st_size,
+            mime_type=None,
+            title=project.title,
+            local_path=source,
+            ext=source.suffix or ".mp4",
+        )
+        link_project_asset(db, project, asset)
+        if project.source_type == "upload":
+            add_source(db, upload_fingerprint(sha256), asset.id)
+        elif project.source_url:
+            add_source(db, url_fingerprint(project.source_url), asset.id)
+
+    if not asset.duration_ms:
+        asset.duration_ms = duration_ms
+        db.commit()
+    return asset
 
 
 def run_pipeline(project_id: int) -> None:
@@ -87,6 +136,8 @@ def run_pipeline(project_id: int) -> None:
                 f"video too long: {duration_ms / 1000:.0f}s > {settings.max_video_seconds}s"
             )
 
+        asset = _asset_for_source(db, project, source, duration_ms)
+
         _update(
             project,
             db,
@@ -98,7 +149,13 @@ def run_pipeline(project_id: int) -> None:
         wav_path = work_dir / "full.wav"
         mp3_path = work_dir / "full.mp3"
         extract_audio(source, wav_path, mp3_path)
-        upload_file(str(mp3_path), f"projects/{project.id}/audio.mp3", "audio/mpeg")
+
+        audio_file = get_asset_file(db, asset.id, "audio")
+        if audio_file is None:
+            audio_key = asset_object_key(asset.sha256, "audio")
+            upload_file(str(mp3_path), audio_key, "audio/mpeg")
+            upsert_asset_file(db, asset, "audio", audio_key, mp3_path.stat().st_size)
+            audio_file = get_asset_file(db, asset.id, "audio")
 
         _update(project, db, status="transcribing", progress=50)
         provider = get_asr_provider()
@@ -124,13 +181,20 @@ def run_pipeline(project_id: int) -> None:
             )
         db.commit()
 
-        video_key = project.source_video_url
+        original = get_asset_file(db, asset.id, "original")
+        video_key = original.object_key if original else project.source_video_url
         if settings.transcode_video and has_video_stream(source):
-            proxy_path = work_dir / "proxy.mp4"
-            transcode_video(source, proxy_path)
-            proxy_key = f"projects/{project.id}/source.mp4"
-            upload_file(str(proxy_path), proxy_key, "video/mp4")
-            video_key = proxy_key
+            proxy_file = get_asset_file(db, asset.id, "proxy")
+            if proxy_file is None:
+                proxy_path = work_dir / "proxy.mp4"
+                transcode_video(source, proxy_path)
+                proxy_key = asset_object_key(asset.sha256, "proxy")
+                upload_file(str(proxy_path), proxy_key, "video/mp4")
+                upsert_asset_file(
+                    db, asset, "proxy", proxy_key, proxy_path.stat().st_size
+                )
+                proxy_file = get_asset_file(db, asset.id, "proxy")
+            video_key = proxy_file.object_key if proxy_file else video_key
 
         _update(
             project,

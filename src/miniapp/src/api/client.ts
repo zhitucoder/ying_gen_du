@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '@/config'
 
-import { clearToken, ensureLogin } from './auth'
+import { clearAuth, getToken } from './auth'
 import type {
   Project,
   Recording,
@@ -29,14 +29,31 @@ function detailOf(data: unknown, status: number): string {
   return `请求失败 (${status})`
 }
 
+function redirectToLogin(): void {
+  const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+  const current = pages.length ? pages[pages.length - 1].route || '' : ''
+  if (current === 'pages/login/login') {
+    return
+  }
+  uni.reLaunch({ url: '/pages/login/login' })
+}
+
+function requireToken(): string {
+  const token = getToken()
+  if (!token) {
+    redirectToLogin()
+    throw new ApiError(401, '请先登录')
+  }
+  return token
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   data?: Record<string, unknown>
-  retried?: boolean
 }
 
 async function rawRequest<T>(path: string, options: RequestOptions): Promise<T> {
-  const token = await ensureLogin()
+  const token = requireToken()
   return new Promise<T>((resolve, reject) => {
     uni.request({
       url: `${API_BASE_URL}${path}`,
@@ -62,9 +79,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   try {
     return await rawRequest<T>(path, options)
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401 && !options.retried) {
-      clearToken()
-      return rawRequest<T>(path, { ...options, retried: true })
+    if (error instanceof ApiError && error.status === 401) {
+      clearAuth()
+      redirectToLogin()
     }
     throw error
   }
@@ -75,7 +92,7 @@ async function upload<T>(
   filePath: string,
   formData: Record<string, string> = {},
 ): Promise<T> {
-  const token = await ensureLogin()
+  const token = requireToken()
   return new Promise<T>((resolve, reject) => {
     uni.uploadFile({
       url: `${API_BASE_URL}${path}`,
@@ -91,6 +108,10 @@ async function upload<T>(
             reject(new ApiError(res.statusCode, '响应解析失败'))
           }
           return
+        }
+        if (res.statusCode === 401) {
+          clearAuth()
+          redirectToLogin()
         }
         let message = `上传失败 (${res.statusCode})`
         try {
@@ -110,7 +131,7 @@ export async function uploadRecordingBlob(
   blob: Blob,
   durationMs: number,
 ): Promise<Recording> {
-  const token = await ensureLogin()
+  const token = requireToken()
   const form = new FormData()
   form.append('file', blob, 'recording.webm')
   form.append('duration_ms', String(Math.round(durationMs)))
@@ -120,6 +141,10 @@ export async function uploadRecordingBlob(
     body: form,
   })
   if (!res.ok) {
+    if (res.status === 401) {
+      clearAuth()
+      redirectToLogin()
+    }
     throw new ApiError(res.status, `上传失败 (${res.status})`)
   }
   return (await res.json()) as Recording
@@ -135,6 +160,8 @@ export const api = {
   getProject: (id: number) => request<Project>(`/api/projects/${id}`),
   updateProjectTitle: (id: number, title: string) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', data: { title } }),
+  deleteProject: (id: number) =>
+    request<{ deleted: boolean }>(`/api/projects/${id}`, { method: 'DELETE' }),
   getTranscript: (id: number) => request<Transcript>(`/api/projects/${id}/transcript`),
   getSegments: (id: number) => request<Segment[]>(`/api/projects/${id}/segments`),
   getVideo: (id: number) => request<{ video_url: string }>(`/api/projects/${id}/video`),

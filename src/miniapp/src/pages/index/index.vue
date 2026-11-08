@@ -5,6 +5,14 @@
       <text class="hero-subtitle">粘贴链接或上传视频，逐句跟读</text>
     </view>
 
+    <view class="userbar">
+      <text class="hello">你好，{{ user?.nickname || user?.username || '用户' }}</text>
+      <view class="userbar-actions">
+        <text class="nickname-edit" @click="startNicknameEdit">改昵称</text>
+        <text class="logout" @click="logout">退出登录</text>
+      </view>
+    </view>
+
     <view class="card">
       <text class="label">视频链接</text>
       <textarea
@@ -34,9 +42,16 @@
         <text class="project-meta">
           {{ statusLabel(project.status) }} · {{ msToClock(project.duration_ms || 0) }}
         </text>
+        <text
+          v-if="project.status === 'failed' && project.error_msg"
+          class="project-error"
+        >
+          {{ project.error_msg }}
+        </text>
       </view>
       <view class="project-side">
         <text class="edit" @click.stop="startEdit(project)">改标题</text>
+        <text class="delete" @click.stop="removeProject(project)">删除</text>
         <text class="project-badge" :class="project.status" @click="openProject(project)">
           {{ project.status === 'ready' ? '进入' : statusLabel(project.status) }}
         </text>
@@ -60,6 +75,24 @@
         </view>
       </view>
     </view>
+
+    <view v-if="editingNickname" class="modal-mask" @click="cancelNicknameEdit">
+      <view class="modal" @click.stop>
+        <text class="modal-title">修改昵称</text>
+        <input
+          v-model="nicknameDraft"
+          class="modal-input"
+          :maxlength="20"
+          placeholder="2-20 个字符"
+        />
+        <view class="modal-actions">
+          <button class="ghost" @click="cancelNicknameEdit">取消</button>
+          <button class="primary" :disabled="savingNickname" @click="saveNickname">
+            {{ savingNickname ? '保存中...' : '保存' }}
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -68,6 +101,13 @@ import { onShow } from '@dcloudio/uni-app'
 import { ref } from 'vue'
 
 import { api } from '@/api/client'
+import {
+  clearAuth,
+  getUser,
+  isLoggedIn,
+  updateNickname,
+  type AuthUser,
+} from '@/api/auth'
 import type { Project } from '@/api/types'
 import { msToClock, statusLabel } from '@/utils/format'
 
@@ -78,6 +118,10 @@ const projects = ref<Project[]>([])
 const editing = ref<Project | null>(null)
 const editTitle = ref('')
 const saving = ref(false)
+const user = ref<AuthUser | null>(getUser())
+const editingNickname = ref(false)
+const nicknameDraft = ref('')
+const savingNickname = ref(false)
 
 const URL_RE = /https?:\/\/[^\s，。！？、（）()【】]+/
 
@@ -181,7 +225,73 @@ async function saveTitle() {
   }
 }
 
+function logout() {
+  uni.showModal({
+    title: '退出登录',
+    content: '确定要退出当前账号吗？',
+    success: (res) => {
+      if (res.confirm) {
+        clearAuth()
+        uni.reLaunch({ url: '/pages/login/login' })
+      }
+    },
+  })
+}
+
+function startNicknameEdit() {
+  editingNickname.value = true
+  nicknameDraft.value = user.value?.nickname || ''
+}
+
+function cancelNicknameEdit() {
+  editingNickname.value = false
+  nicknameDraft.value = ''
+}
+
+async function saveNickname() {
+  const value = nicknameDraft.value.trim()
+  if (value.length < 2 || value.length > 20) {
+    uni.showToast({ title: '昵称需 2-20 个字符', icon: 'none' })
+    return
+  }
+  savingNickname.value = true
+  try {
+    const updated = await updateNickname(value)
+    user.value = updated
+    cancelNicknameEdit()
+    uni.showToast({ title: '已保存', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' })
+  } finally {
+    savingNickname.value = false
+  }
+}
+
+function removeProject(project: Project) {
+  uni.showModal({
+    title: '删除项目',
+    content: '删除后不可恢复，确定删除？',
+    success: async (res) => {
+      if (!res.confirm) {
+        return
+      }
+      try {
+        await api.deleteProject(project.id)
+        projects.value = projects.value.filter((item) => item.id !== project.id)
+        uni.showToast({ title: '已删除', icon: 'success' })
+      } catch (error) {
+        uni.showToast({ title: (error as Error).message, icon: 'none' })
+      }
+    },
+  })
+}
+
 onShow(() => {
+  if (!isLoggedIn()) {
+    uni.reLaunch({ url: '/pages/login/login' })
+    return
+  }
+  user.value = getUser()
   loadProjects()
 })
 </script>
@@ -208,6 +318,34 @@ onShow(() => {
   margin-top: 8rpx;
   color: #6b7280;
   font-size: 26rpx;
+}
+
+.userbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8rpx 20rpx;
+}
+
+.hello {
+  color: #6b7280;
+  font-size: 24rpx;
+}
+
+.userbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.nickname-edit {
+  color: #2563eb;
+  font-size: 24rpx;
+}
+
+.logout {
+  color: #2563eb;
+  font-size: 24rpx;
 }
 
 .card {
@@ -312,6 +450,16 @@ onShow(() => {
   font-size: 24rpx;
 }
 
+.project-error {
+  display: block;
+  margin-top: 6rpx;
+  color: #dc2626;
+  font-size: 22rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-side {
   display: flex;
   flex-direction: column;
@@ -321,6 +469,12 @@ onShow(() => {
 
 .edit {
   color: #2563eb;
+  font-size: 24rpx;
+}
+
+.delete {
+  margin-top: 6rpx;
+  color: #dc2626;
   font-size: 24rpx;
 }
 

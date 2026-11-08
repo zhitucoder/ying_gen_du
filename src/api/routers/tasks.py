@@ -8,6 +8,14 @@ from sqlalchemy.orm import Session
 
 from src.api.db import get_db
 from src.api.deps import get_current_user
+from src.api.media_assets import (
+    add_source,
+    compute_sha256,
+    get_asset_file,
+    get_or_create_asset,
+    link_project_asset,
+    upload_fingerprint,
+)
 from src.api.models import Project, User
 from src.api.schemas import TaskCreateRequest, TaskCreated, TaskStatus
 from src.api.storage import upload_file
@@ -69,7 +77,6 @@ async def create_upload_task(
     db: Session = Depends(get_db),
 ) -> TaskCreated:
     ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
-    object_key = f"uploads/{user.id}/{uuid.uuid4().hex}{ext}"
 
     upload_dir = Path(settings.work_dir) / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +84,8 @@ async def create_upload_task(
 
     size = 0
     limit = settings.max_upload_mb * 1024 * 1024
+    asset = None
+    object_key = ""
     try:
         with local_path.open("wb") as out:
             while chunk := await file.read(1024 * 1024):
@@ -88,23 +97,44 @@ async def create_upload_task(
                     )
                 out.write(chunk)
 
-        upload_file(str(local_path), object_key, file.content_type)
+        if settings.media_dedup_enabled:
+            sha256 = compute_sha256(local_path)
+            asset = get_or_create_asset(
+                db,
+                sha256=sha256,
+                size_bytes=size,
+                mime_type=file.content_type,
+                title=title or file.filename,
+                local_path=local_path,
+                ext=ext,
+            )
+            original = get_asset_file(db, asset.id, "original")
+            if original is None:
+                raise HTTPException(status_code=500, detail="asset original missing")
+            object_key = original.object_key
+            add_source(db, upload_fingerprint(sha256), asset.id)
+        else:
+            object_key = f"uploads/{user.id}/{uuid.uuid4().hex}{ext}"
+            upload_file(str(local_path), object_key, file.content_type)
+
+        project = Project(
+            user_id=user.id,
+            source_type="upload",
+            source_video_url=object_key,
+            title=title or file.filename,
+            status="queued",
+            progress=0,
+            video_status="processing",
+        )
+        db.add(project)
+        db.flush()
+        if asset is not None:
+            link_project_asset(db, project, asset)
+        db.commit()
+        db.refresh(project)
     finally:
         local_path.unlink(missing_ok=True)
         await file.close()
-
-    project = Project(
-        user_id=user.id,
-        source_type="upload",
-        source_video_url=object_key,
-        title=title or file.filename,
-        status="queued",
-        progress=0,
-        video_status="processing",
-    )
-    db.add(project)
-    db.commit()
-    db.refresh(project)
 
     enqueue_project(project.id)
     return TaskCreated(task_id=project.id, status=project.status)

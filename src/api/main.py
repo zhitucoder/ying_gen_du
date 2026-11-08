@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.db import init_db
+from src.api.db import ensure_schema, init_db
 from src.api.routers import auth, projects, recordings, segments, tasks
 from src.api.storage import ensure_bucket
 from src.common.config import settings
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ensure_schema()
     try:
         ensure_bucket()
     except Exception:  # pragma: no cover - storage may be down in dev

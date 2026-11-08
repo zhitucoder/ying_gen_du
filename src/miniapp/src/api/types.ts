@@ -25,8 +25,10 @@ export interface Segment {
 export interface Project {
   id: number
   title?: string | null
+  source_type: string
   status: string
   progress: number
+  error_msg?: string | null
   duration_ms?: number | null
   cover_url?: string | null
   source_url?: string | null
