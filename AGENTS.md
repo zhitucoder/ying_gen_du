@@ -20,7 +20,7 @@
 - Use repo-local `.venv` (created with `uv`, system Python 3.12.3). **Do not use conda.**
 - Run every command from the repo root: `src` is the package root and `.env` is loaded relative to CWD.
 - `.venv` and `.env` are gitignored. `requirements.txt` = top-level deps; `requirements.lock.txt` = pinned versions.
-- This directory is **not a git repo**; do not assume git/PR workflows.
+- This is a **git repo** with remote `git@github.com:zhitucoder/ying_gen_du.git` (branch `main`). Commit identity is `zhitucoder <zhitucoder@163.com>`, SSH-signed with `~/.ssh/id_ed25519_github.pub`.
 
 ## Commands
 
@@ -55,6 +55,17 @@ Start order: infra → API → worker → H5. The H5 app needs the API (`:8000`)
 
 - No pytest / ruff / mypy configured. Verify changes with `compileall`, `/health`, and an upload → poll → `/segments` smoke test.
 - Only run **one** Celery worker. Duplicate workers can consume tasks with stale code/config (this happened).
+
+## Git push
+
+- GitHub SSH port **22 is blocked** in this environment. The repo-local `core.sshCommand` routes pushes through `ssh.github.com:443`, so plain `git push` works.
+- Manual fallback:
+
+```bash
+GIT_SSH_COMMAND='ssh -p 443 -o HostName=ssh.github.com -i ~/.ssh/id_ed25519_github' git push origin main
+```
+
+- Never commit `.env`, `.venv`, `node_modules`, or build output. The real API key in `docs/火山语音API.MD` is redacted; keep it that way.
 
 ## Frontend
 
