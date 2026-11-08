@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+celery
+redis
+SQLAlchemy
+PyMySQL
+cryptography
+pydantic-settings
+python-multipart
+PyJWT
+minio
+yt-dlp
+httpx
+packaging

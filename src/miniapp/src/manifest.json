@@ -1,0 +1,34 @@
+{
+  "name": "影跟读",
+  "appid": "",
+  "description": "影子跟读学习工具",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "compilerVersion": 3,
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>"
+        ]
+      }
+    }
+  },
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true
+  },
+  "h5": {
+    "title": "影跟读",
+    "router": {
+      "mode": "hash"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "yinggen-resolvers",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Media link resolvers for the Celery worker",
+  "dependencies": {
+    "playwright": "1.59.1"
+  }
+}
