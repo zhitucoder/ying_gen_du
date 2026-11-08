@@ -34,13 +34,24 @@ docker compose -f infra/docker-compose.yml up -d
 # worker (run exactly one)
 .venv/bin/celery -A src.worker.celery_app:celery_app worker -l info -c 2
 
+# frontend H5 (port 5173) — needs API + worker for uploads
+cd src/miniapp
+npm install            # first run only
+npm run dev:h5         # http://localhost:5173
+
+# frontend WeChat mini program (watch build)
+npm run dev:mp-weixin  # open dist/dev/mp-weixin in WeChat DevTools
+
 # no test/lint config exists; use these as the verification gate
+cd ../..
 .venv/bin/python -m compileall -q src
 curl -s http://127.0.0.1:8000/health
 
 # media GC (manual)
 .venv/bin/python -m src.worker.gc
 ```
+
+Start order: infra → API → worker → H5. The H5 app needs the API (`:8000`) and worker running for link/upload processing.
 
 - No pytest / ruff / mypy configured. Verify changes with `compileall`, `/health`, and an upload → poll → `/segments` smoke test.
 - Only run **one** Celery worker. Duplicate workers can consume tasks with stale code/config (this happened).
