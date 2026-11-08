@@ -74,6 +74,8 @@ class TaskCreateRequest(BaseModel):
 class TaskCreated(BaseModel):
     task_id: int
     status: str
+    existing: bool = False
+    title: Optional[str] = None
 
 
 class TaskStatus(BaseModel):

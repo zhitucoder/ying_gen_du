@@ -151,6 +151,22 @@ async function submitLink() {
   try {
     const task = await api.createLinkTask(url)
     link.value = ''
+    if (task.existing) {
+      const title = task.title || '该视频'
+      uni.showModal({
+        title: '已经保存过',
+        content: `你已经保存过《${title}》，直接打开？`,
+        showCancel: false,
+        success: () => {
+          const target =
+            task.status === 'ready'
+              ? `/pages/lesson/lesson?id=${task.task_id}`
+              : `/pages/processing/processing?id=${task.task_id}`
+          uni.navigateTo({ url: target })
+        },
+      })
+      return
+    }
     uni.navigateTo({ url: `/pages/processing/processing?id=${task.task_id}` })
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' })

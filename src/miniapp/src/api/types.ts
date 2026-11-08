@@ -1,6 +1,8 @@
 export interface TaskCreated {
   task_id: number
   status: string
+  existing?: boolean
+  title?: string | null
 }
 
 export interface TaskStatus {

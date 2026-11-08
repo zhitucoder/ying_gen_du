@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.db import get_db
@@ -14,6 +15,7 @@ from src.api.media_assets import (
     get_asset_file,
     get_or_create_asset,
     link_project_asset,
+    normalize_source_url,
     upload_fingerprint,
 )
 from src.api.models import Project, User
@@ -52,10 +54,35 @@ def create_link_task(
     if not body.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="url must be http(s)")
 
+    source_url = body.url.strip()
+    target = normalize_source_url(source_url)
+    existing = next(
+        (
+            item
+            for item in db.scalars(
+                select(Project)
+                .where(
+                    Project.user_id == user.id,
+                    Project.source_type == "link",
+                )
+                .order_by(Project.created_at.desc())
+            ).all()
+            if item.source_url and normalize_source_url(item.source_url) == target
+        ),
+        None,
+    )
+    if existing is not None:
+        return TaskCreated(
+            task_id=existing.id,
+            status=existing.status,
+            existing=True,
+            title=existing.title,
+        )
+
     project = Project(
         user_id=user.id,
         source_type="link",
-        source_url=body.url,
+        source_url=source_url,
         title=body.title,
         status="queued",
         progress=0,

@@ -132,13 +132,16 @@ def upsert_asset_file(
         raise
 
 
-def _normalize_url(url: str) -> str:
+def normalize_source_url(url: str) -> str:
     parts = urlsplit(url.strip())
-    return urlunsplit((parts.scheme, parts.netloc.lower(), parts.path, parts.query, ""))
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), path, parts.query, "")
+    )
 
 
 def url_fingerprint(url: str) -> str:
-    return f"url:{hashlib.sha256(_normalize_url(url).encode()).hexdigest()}"
+    return f"url:{hashlib.sha256(normalize_source_url(url).encode()).hexdigest()}"
 
 
 def upload_fingerprint(sha256: str) -> str:

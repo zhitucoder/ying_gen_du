@@ -82,6 +82,7 @@ curl -s http://127.0.0.1:8000/health
 
 - `yt-dlp` handles Bilibili / YouTube and similar.
 - Douyin links use a Playwright resolver: `src/worker/douyin.py` → `src/worker/resolvers/douyin.js` (Node + `playwright` + Chromium). It opens the real page, captures `aweme_detail`, and downloads without user credentials.
+- `POST /api/tasks` checks the user's existing link projects using a normalized URL; a repeat returns `existing=true` with the original project id/title so the frontend opens it instead of creating a duplicate.
 - Requires `cd src/worker/resolvers && npm install` plus a Chromium binary (`npx playwright install chromium`, or an existing `~/.cache/ms-playwright/chromium-*`). `DOUYIN_RESOLVER_ENABLED=false` disables it.
 - Do not fall back to `download_direct` for Douyin: unauthenticated HTTP returns HTML, not video.
 
