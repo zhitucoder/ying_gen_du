@@ -67,6 +67,7 @@ const segment = computed(() => segments.value[index.value])
 
 let recorder: Recorder | null = null
 let audio: UniApp.InnerAudioContext | null = null
+let stopping: Promise<void> | null = null
 
 function getAudio(): UniApp.InnerAudioContext {
   if (!audio) {
@@ -129,7 +130,8 @@ function stopPlayback() {
   audio?.stop()
 }
 
-function playOriginalWithCompare(compare: boolean) {
+async function playOriginalWithCompare(compare: boolean) {
+  await finishRecording()
   if (!segment.value) {
     return
   }
@@ -154,7 +156,7 @@ function playOriginalWithCompare(compare: boolean) {
 }
 
 function playOriginal() {
-  playOriginalWithCompare(false)
+  void playOriginalWithCompare(false)
 }
 
 function onVideoTimeUpdate(event: { detail?: { currentTime?: number } }) {
@@ -172,46 +174,74 @@ function onVideoTimeUpdate(event: { detail?: { currentTime?: number } }) {
   }
 }
 
+async function finishRecording(): Promise<void> {
+  if (stopping) {
+    await stopping
+    return
+  }
+  if (!recording.value) {
+    return
+  }
+  if (!recorder || !segment.value) {
+    recording.value = false
+    return
+  }
+
+  const currentRecorder = recorder
+  const currentSegment = segment.value
+  stopping = (async () => {
+    try {
+      const result = await currentRecorder.stop()
+      recording.value = false
+      uploading.value = true
+      const saved = result.blob
+        ? await uploadRecordingBlob(
+            currentSegment.id,
+            result.blob,
+            result.durationMs,
+          )
+        : await api.uploadRecording(
+            currentSegment.id,
+            result.filePath,
+            result.durationMs,
+          )
+      recordingUrl.value = saved.audio_url || ''
+      uni.showToast({ title: '录音已保存', icon: 'success' })
+    } catch (error) {
+      uni.showToast({ title: (error as Error).message, icon: 'none' })
+    } finally {
+      recording.value = false
+      uploading.value = false
+      recorder = null
+      stopping = null
+    }
+  })()
+  await stopping
+}
+
 async function toggleRecord() {
   if (uploading.value || !segment.value) {
     return
   }
 
-  if (!recording.value) {
-    stopPlayback()
-    recorder = createRecorder()
-    try {
-      await recorder.start()
-      recording.value = true
-    } catch (error) {
-      recorder = null
-      uni.showToast({ title: (error as Error).message, icon: 'none' })
-    }
+  if (recording.value) {
+    await finishRecording()
     return
   }
 
-  if (!recorder) {
-    return
-  }
-
+  stopPlayback()
+  recorder = createRecorder()
   try {
-    const result = await recorder.stop()
-    recording.value = false
-    uploading.value = true
-    const saved = result.blob
-      ? await uploadRecordingBlob(segment.value.id, result.blob, result.durationMs)
-      : await api.uploadRecording(segment.value.id, result.filePath, result.durationMs)
-    recordingUrl.value = saved.audio_url || ''
-    uni.showToast({ title: '录音已保存', icon: 'success' })
+    await recorder.start()
+    recording.value = true
   } catch (error) {
-    uni.showToast({ title: (error as Error).message, icon: 'none' })
-  } finally {
-    uploading.value = false
     recorder = null
+    uni.showToast({ title: (error as Error).message, icon: 'none' })
   }
 }
 
-function playRecording() {
+async function playRecording() {
+  await finishRecording()
   if (!recordingUrl.value) {
     return
   }
@@ -221,14 +251,16 @@ function playRecording() {
   player.play()
 }
 
-function playCompare() {
+async function playCompare() {
+  await finishRecording()
   if (!recordingUrl.value) {
     return
   }
-  playOriginalWithCompare(true)
+  await playOriginalWithCompare(true)
 }
 
-function go(delta: number) {
+async function go(delta: number) {
+  await finishRecording()
   const next = index.value + delta
   if (next < 0 || next >= segments.value.length) {
     return
