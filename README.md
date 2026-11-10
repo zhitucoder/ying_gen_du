@@ -196,6 +196,7 @@ curl -s http://127.0.0.1:8000/health
 - DB 中 `audio_url` / `video_url` 存的是对象 key，接口返回的是 MinIO 签名 URL。
 - 抖音链接由 Playwright 无头浏览器解析（`src/worker/resolvers/douyin.js`），无需登录；B站/YouTube 等走 `yt-dlp`。可通过 `DOUYIN_RESOLVER_ENABLED=false` 关闭。
 - 短信防刷：单号 60 秒冷却、每小时 3 条、每天 5 条，并叠加 IP/设备限制；验证码只存哈希、5 分钟有效、最多试错 5 次。
+- 录音最长 **15 秒**：前端到点自动停止，后端用 ffmpeg 兜底截断后再存储。
 - 生产环境只信任来自 Nginx 的 `X-Forwarded-For`，避免客户端伪造 IP 绕过限流。
 - `.env` 已被 `.gitignore` 排除，请勿提交密钥。
 

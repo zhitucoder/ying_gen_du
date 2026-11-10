@@ -1,3 +1,5 @@
+import { RECORDING_MAX_SECONDS } from '@/config'
+
 export interface RecordResult {
   filePath: string
   durationMs: number
@@ -106,7 +108,7 @@ function createUniRecorder(): Recorder {
         startResolve = resolve
         startReject = reject
         manager.start({
-          duration: 60000,
+          duration: RECORDING_MAX_SECONDS * 1000,
           format: 'mp3',
           sampleRate: 44100,
           numberOfChannels: 1,

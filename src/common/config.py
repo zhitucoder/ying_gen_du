@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     media_staging_prefix: str = "staging/"
     media_asset_prefix: str = "media/"
 
+    recording_max_seconds: int = 15
+
     max_video_seconds: int = 1800
     max_upload_mb: int = 300
     transcode_video: bool = True

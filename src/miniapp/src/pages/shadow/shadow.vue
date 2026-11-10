@@ -25,6 +25,8 @@
       </button>
     </view>
 
+    <text class="record-hint">录音最长 {{ RECORDING_MAX_SECONDS }} 秒</text>
+
     <text v-if="uploading" class="uploading">录音上传中…</text>
 
     <view v-if="recordingUrl" class="recording-card">
@@ -50,6 +52,7 @@ import { computed, ref } from 'vue'
 
 import { api, uploadRecordingBlob } from '@/api/client'
 import type { Segment } from '@/api/types'
+import { RECORDING_MAX_SECONDS } from '@/config'
 import { msToClock } from '@/utils/format'
 import { createRecorder, type Recorder } from '@/utils/recorder'
 
@@ -68,6 +71,7 @@ const segment = computed(() => segments.value[index.value])
 let recorder: Recorder | null = null
 let audio: UniApp.InnerAudioContext | null = null
 let stopping: Promise<void> | null = null
+let recordTimer: ReturnType<typeof setTimeout> | null = null
 
 function getAudio(): UniApp.InnerAudioContext {
   if (!audio) {
@@ -116,6 +120,10 @@ onLoad(async (query) => {
 })
 
 onUnload(() => {
+  if (recordTimer) {
+    clearTimeout(recordTimer)
+    recordTimer = null
+  }
   recorder?.cancel()
   stopPlayback()
   audio?.destroy()
@@ -175,6 +183,10 @@ function onVideoTimeUpdate(event: { detail?: { currentTime?: number } }) {
 }
 
 async function finishRecording(): Promise<void> {
+  if (recordTimer) {
+    clearTimeout(recordTimer)
+    recordTimer = null
+  }
   if (stopping) {
     await stopping
     return
@@ -234,6 +246,9 @@ async function toggleRecord() {
   try {
     await recorder.start()
     recording.value = true
+    recordTimer = setTimeout(() => {
+      void finishRecording()
+    }, RECORDING_MAX_SECONDS * 1000)
   } catch (error) {
     recorder = null
     uni.showToast({ title: (error as Error).message, icon: 'none' })
@@ -340,6 +355,14 @@ async function go(delta: number) {
 
 .record.active {
   background: #fef2f2;
+}
+
+.record-hint {
+  display: block;
+  margin-top: 10rpx;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 22rpx;
 }
 
 .uploading {

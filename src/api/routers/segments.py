@@ -11,6 +11,7 @@ from src.api.models import Project, Recording, Segment, User
 from src.api.schemas import RecordingOut
 from src.api.storage import presigned_get, upload_file
 from src.common.config import settings
+from src.worker.media import ffprobe_duration_ms, run
 
 router = APIRouter(prefix="/api/segments", tags=["segments"])
 
@@ -36,17 +37,57 @@ async def upload_recording(
     segment = _get_owned_segment(db, segment_id, user)
 
     ext = Path(file.filename or "recording.mp3").suffix.lower() or ".mp3"
-    object_key = f"recordings/{user.id}/{segment.id}/{uuid.uuid4().hex}{ext}"
-
     tmp_dir = Path(settings.work_dir) / "recordings"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     local_path = tmp_dir / f"{uuid.uuid4().hex}{ext}"
+    content_type = file.content_type or "audio/mpeg"
 
     try:
         with local_path.open("wb") as out:
             while chunk := await file.read(1024 * 1024):
                 out.write(chunk)
-        upload_file(str(local_path), object_key, file.content_type or "audio/mpeg")
+
+        try:
+            probed_ms = ffprobe_duration_ms(local_path)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="无法读取录音文件") from exc
+        if probed_ms <= 0:
+            raise HTTPException(status_code=400, detail="录音文件为空")
+
+        max_ms = settings.recording_max_seconds * 1000
+        if probed_ms > max_ms:
+            trimmed = tmp_dir / f"{uuid.uuid4().hex}.mp3"
+            try:
+                run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(local_path),
+                        "-t",
+                        str(settings.recording_max_seconds),
+                        "-vn",
+                        "-c:a",
+                        "libmp3lame",
+                        "-b:a",
+                        "64k",
+                        str(trimmed),
+                    ]
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500, detail="录音处理失败"
+                ) from exc
+            local_path.unlink(missing_ok=True)
+            local_path = trimmed
+            ext = ".mp3"
+            content_type = "audio/mpeg"
+            duration_ms = max_ms
+        else:
+            duration_ms = probed_ms
+
+        object_key = f"recordings/{user.id}/{segment.id}/{uuid.uuid4().hex}{ext}"
+        upload_file(str(local_path), object_key, content_type)
     finally:
         local_path.unlink(missing_ok=True)
         await file.close()

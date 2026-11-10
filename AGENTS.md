@@ -90,7 +90,7 @@ GIT_SSH_COMMAND='ssh -p 443 -o HostName=ssh.github.com -i ~/.ssh/id_ed25519_gith
 - Legacy projects may have `media_asset_id = NULL` and per-project `projects/{id}/source.mp4`; do not assume every project has an asset.
 - Presigned URLs are signed against `MINIO_ENDPOINT`. For phone clients this endpoint must be reachable (not `127.0.0.1`).
 - Tables are created by `Base.metadata.create_all()` in the FastAPI lifespan. There is **no Alembic**; schema changes need a manual migration (or drop/recreate in dev).
-- `ffmpeg` / `ffprobe` must be on PATH. The pipeline decodes once to `full.wav`, slices segments from it, and transcodes a 720p H.264/AAC proxy.
+- `ffmpeg` / `ffprobe` must be on PATH. The pipeline decodes once to `full.wav`, slices segments from it, and transcodes a 720p H.264/AAC proxy. The API also uses ffmpeg/ffprobe to trim recordings to 15s.
 - Task flow: `POST /api/tasks` or `/api/tasks/upload` → Redis/Celery → `src/worker/pipeline.py` → DB status/progress. Enqueue is best-effort; if Redis is down the project stays `queued`.
 
 ## ASR
@@ -112,6 +112,7 @@ GIT_SSH_COMMAND='ssh -p 443 -o HostName=ssh.github.com -i ~/.ssh/id_ed25519_gith
 
 - No pronunciation scoring: `POST /api/segments/{id}/score` returns 501; `recordings.score` is reserved and unused.
 - Recordings are uploaded to MinIO (not local-only).
+- Recordings are capped at **15s** (`RECORDING_MAX_SECONDS`); the frontend auto-stops and the API trims with ffmpeg before storing.
 - Auth: username/password + phone/SMS (PBKDF2, JWT with `token_version`). Endpoints: `/api/auth/{register,login,me}`, `/api/auth/sms/{send,register,login,reset-password,bind}`. Password reset bumps `token_version` and revokes old JWTs. WeChat login is **not** implemented yet.
 - SMS: `src/api/sms` (mock default, tencent). Rate limits in Redis via Lua: 60s cooldown, 5/day/phone, 3/hour, plus IP/device caps. Codes are hashed in `sms_codes`; never log or return plaintext. `SMS_PROVIDER=mock` uses `SMS_MOCK_CODE` (default `123456`).
 - `users` has `username/password_hash/phone/phone_verified_at/auth_type/token_version`; startup `ensure_schema()` adds them (no Alembic).
