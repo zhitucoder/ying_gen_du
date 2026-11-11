@@ -51,6 +51,24 @@ def has_video_stream(path: PathLike) -> bool:
     return bool(out.strip())
 
 
+def has_audio_stream(path: PathLike) -> bool:
+    out = run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ]
+    )
+    return bool(out.strip())
+
+
 def extract_audio(input_path: PathLike, wav_path: PathLike, mp3_path: PathLike) -> None:
     run(
         [

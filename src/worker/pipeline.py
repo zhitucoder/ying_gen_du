@@ -25,6 +25,7 @@ from src.worker.media import (
     download_with_ytdlp,
     extract_audio,
     ffprobe_duration_ms,
+    has_audio_stream,
     has_video_stream,
     slice_audio,
     transcode_video,
@@ -135,6 +136,8 @@ def run_pipeline(project_id: int) -> None:
             raise RuntimeError(
                 f"video too long: {duration_ms / 1000:.0f}s > {settings.max_video_seconds}s"
             )
+        if not has_audio_stream(source):
+            raise RuntimeError("该视频没有音轨，无法提取文案")
 
         asset = _asset_for_source(db, project, source, duration_ms)
 

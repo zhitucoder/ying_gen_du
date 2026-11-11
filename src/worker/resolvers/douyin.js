@@ -68,7 +68,7 @@ async function main() {
     }
 
     if (!detail || !detail.aweme_detail) {
-      throw new Error('无法获取抖音视频信息（页面可能需要验证）')
+      throw new Error('无法获取抖音作品信息（可能是图文作品或需要验证），暂不支持')
     }
 
     const item = detail.aweme_detail
@@ -80,6 +80,13 @@ async function main() {
     }
     for (const link of (item.video && item.video.play_addr && item.video.play_addr.url_list) || []) {
       candidates.push(link)
+    }
+
+    if (!candidates.length) {
+      if (item.images && item.images.length) {
+        throw new Error('该抖音作品是图文，不是视频，暂不支持')
+      }
+      throw new Error('该抖音作品没有可下载的视频，暂不支持')
     }
 
     let size = 0
