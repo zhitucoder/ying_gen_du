@@ -16,6 +16,7 @@ from src.api.media_assets import (
     get_or_create_asset,
     link_project_asset,
     normalize_source_url,
+    unlink_project_asset,
     upload_fingerprint,
 )
 from src.api.models import Project, User
@@ -56,21 +57,24 @@ def create_link_task(
 
     source_url = body.url.strip()
     target = normalize_source_url(source_url)
-    existing = next(
-        (
-            item
-            for item in db.scalars(
-                select(Project)
-                .where(
-                    Project.user_id == user.id,
-                    Project.source_type == "link",
-                )
-                .order_by(Project.created_at.desc())
-            ).all()
-            if item.source_url and normalize_source_url(item.source_url) == target
-        ),
-        None,
-    )
+    matching = [
+        item
+        for item in db.scalars(
+            select(Project)
+            .where(
+                Project.user_id == user.id,
+                Project.source_type == "link",
+            )
+            .order_by(Project.created_at.desc())
+        ).all()
+        if item.source_url and normalize_source_url(item.source_url) == target
+    ]
+    for item in matching:
+        if item.status == "failed" and item.media_asset_id:
+            unlink_project_asset(db, item)
+    existing = next((item for item in matching if item.status == "ready"), None)
+    if existing is None:
+        existing = next((item for item in matching if item.status != "failed"), None)
     if existing is not None:
         return TaskCreated(
             task_id=existing.id,
