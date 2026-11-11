@@ -18,7 +18,7 @@
       <textarea
         v-model="link"
         class="textarea"
-        placeholder="粘贴抖音 / B站 / YouTube 链接或分享文案"
+        placeholder="粘贴抖音 / 今日头条链接"
         :maxlength="-1"
         auto-height
       />
