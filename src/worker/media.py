@@ -167,13 +167,18 @@ def download_with_ytdlp(url: str, work_dir: Path) -> Path:
             "--max-filesize",
             "300M",
             "-f",
-            "best[ext=mp4]/best",
+            "bv*[vcodec^=avc1]+ba/bv*+ba/b",
+            "--merge-output-format",
+            "mp4",
             "-o",
             template,
             url,
         ],
         timeout=1800,
     )
+    merged = work_dir / "source.mp4"
+    if merged.exists():
+        return merged
     files = sorted(work_dir.glob("source.*"))
     if not files:
         raise RuntimeError("yt-dlp did not produce a file")

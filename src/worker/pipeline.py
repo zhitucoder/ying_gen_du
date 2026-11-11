@@ -45,6 +45,15 @@ def _update(project: Project, db, *, status: str | None = None, progress: int | 
     db.commit()
 
 
+def _link_error(exc: Exception) -> str:
+    text = str(exc)
+    for line in text.splitlines():
+        if line.startswith("ERROR:"):
+            return line.removeprefix("ERROR:").strip()[:200]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return (lines[-1] if lines else "未知错误")[:200]
+
+
 def _prepare_source(project: Project, work_dir: Path, db) -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -86,9 +95,14 @@ def _prepare_source(project: Project, work_dir: Path, db) -> Path:
 
     try:
         return download_with_ytdlp(project.source_url, work_dir)
-    except Exception:
+    except Exception as exc:
         logger.exception("yt-dlp failed, falling back to direct download")
-        return download_direct(project.source_url, work_dir / "source.mp4")
+        try:
+            return download_direct(project.source_url, work_dir / "source.mp4")
+        except RuntimeError as direct_exc:
+            raise RuntimeError(
+                f"链接解析失败：{_link_error(exc)}；请改用本地上传，或换一个链接"
+            ) from direct_exc
 
 
 def _asset_for_source(
